@@ -2,13 +2,15 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { Feature } from 'ol';
 import Map from 'ol/Map';
 import View from 'ol/View';
-import { LineString, Point } from 'ol/geom';
+import { Geometry, LineString, Point } from 'ol/geom';
 import TileLayer from 'ol/layer/Tile';
+import VectorLayer from 'ol/layer/Vector';
 import { fromLonLat } from 'ol/proj';
 import VectorSource from 'ol/source/Vector';
 import XYZ from 'ol/source/XYZ';
 import { Geolocation, Position } from '@capacitor/geolocation';
 import { Capacitor } from '@capacitor/core';
+
 @Component({
   selector: 'app-map',
   templateUrl: './map.page.html',
@@ -17,8 +19,8 @@ import { Capacitor } from '@capacitor/core';
 })
 export class MapPage implements OnInit, OnDestroy {
   private map: Map | undefined;
-  vectorSource = new VectorSource(); // For dynamic path updates
-  lineString = new LineString([]); // User's walking path
+  vectorSource= new VectorSource(); 
+  lineString: LineString = new LineString([]); 
   currentPosition!: Feature; // Marker for current location
 
   constructor() {}
@@ -35,7 +37,20 @@ export class MapPage implements OnInit, OnDestroy {
     }
   }
 
-  initMap() {
+  async initMap() {
+    const { latitude, longitude } = (
+      await Geolocation.getCurrentPosition({ enableHighAccuracy: true })
+    ).coords;
+
+    const initialPoint = fromLonLat([longitude, latitude]);
+
+    // Add initial features
+    this.lineString.appendCoordinate(initialPoint); // Add the initial point to the LineString
+    this.currentPosition = new Feature(new Point(initialPoint));
+    this.vectorSource.addFeature(new Feature(this.lineString)); // Add the line string to the vector source
+    this.vectorSource.addFeature(this.currentPosition); // Add the current position marker to the vector source
+
+    // Initialize the map
     setTimeout(() => {
       this.map = new Map({
         target: 'map',
@@ -45,19 +60,16 @@ export class MapPage implements OnInit, OnDestroy {
               url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             }),
           }),
+          new VectorLayer({
+            source: this.vectorSource, // Add the vector source to a vector layer
+          }),
         ],
         view: new View({
-          center: [0, 0],
-          zoom: 2,
+          center: initialPoint,
+          zoom: 15,
         }),
       });
-  
-
     }, 500);
-    this.vectorSource.addFeature(new Feature(this.lineString));
-  
-    this.currentPosition = new Feature(new Point(fromLonLat([0, 0])));
-    this.vectorSource.addFeature(this.currentPosition);
   }
 
   async startTracking() {
@@ -68,7 +80,7 @@ export class MapPage implements OnInit, OnDestroy {
         return;
       }
     }
-  
+
     Geolocation.watchPosition(
       {
         enableHighAccuracy: true,
@@ -78,20 +90,22 @@ export class MapPage implements OnInit, OnDestroy {
           console.error('Geolocation error:', err);
           return;
         }
-  
+
         const { latitude, longitude } = position.coords;
         const newPoint = fromLonLat([longitude, latitude]);
-  
+
         // Update the current position marker
         const geometry = this.currentPosition.getGeometry();
         if (geometry) {
           (geometry as Point).setCoordinates(newPoint);
         }
-  
+
+        // Update the line string with the new point
         this.lineString.appendCoordinate(newPoint);
+
+        // Center the map on the new point
         this.map?.getView().setCenter(newPoint);
       }
     );
   }
-  
 }
